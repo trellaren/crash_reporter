@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fs;
 use sysinfo::{Components, Disks, Networks, System};
 
 /// A snapshot of all collected system metrics at one point in time.
@@ -12,6 +13,8 @@ pub struct SystemSnapshot {
     pub thermals: Vec<ThermalComponent>,
     pub disks: Vec<DiskInfo>,
     pub networks: Vec<NetworkInfo>,
+    pub usb_devices: Vec<String>,
+    pub monitors: Vec<String>,
 }
 
 /// Overall and per-core CPU usage.
@@ -171,6 +174,9 @@ pub fn collect_snapshot(sys: &System) -> SystemSnapshot {
         })
         .collect();
 
+    let usb_devices = collect_usb_devices();
+    let monitors = collect_monitors();
+
     SystemSnapshot {
         timestamp,
         cpu,
@@ -179,6 +185,8 @@ pub fn collect_snapshot(sys: &System) -> SystemSnapshot {
         thermals,
         disks,
         networks,
+        usb_devices,
+        monitors,
     }
 }
 
@@ -193,4 +201,68 @@ pub fn init_system() -> System {
 /// Refresh all subsystems in the given `System` to get up-to-date readings.
 pub fn refresh_system(sys: &mut System) {
     sys.refresh_all();
+}
+
+fn collect_usb_devices() -> Vec<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut devices = Vec::new();
+        if let Ok(entries) = fs::read_dir("/sys/bus/usb/devices") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let vendor = fs::read_to_string(path.join("idVendor")).ok();
+                let product = fs::read_to_string(path.join("idProduct")).ok();
+                if let (Some(vendor), Some(product)) = (vendor, product) {
+                    let product_name = fs::read_to_string(path.join("product")).ok();
+                    let vendor = vendor.trim();
+                    let product = product.trim();
+                    let product_name = product_name.unwrap_or_default();
+                    let product_name = product_name.trim();
+                    devices.push(if product_name.is_empty() {
+                        format!("{vendor}:{product}")
+                    } else {
+                        format!("{vendor}:{product} {product_name}")
+                    });
+                }
+            }
+        }
+        devices.sort();
+        devices.dedup();
+        devices
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Vec::new()
+    }
+}
+
+fn collect_monitors() -> Vec<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut monitors = Vec::new();
+        if let Ok(entries) = fs::read_dir("/sys/class/drm") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let status_path = path.join("status");
+                let enabled = fs::read_to_string(status_path)
+                    .ok()
+                    .map(|s| s.trim() == "connected")
+                    .unwrap_or(false);
+
+                if enabled
+                    && let Some(name) = path.file_name().and_then(|n| n.to_str())
+                    && name.contains('-')
+                {
+                    monitors.push(name.to_string());
+                }
+            }
+        }
+        monitors.sort();
+        monitors.dedup();
+        monitors
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Vec::new()
+    }
 }

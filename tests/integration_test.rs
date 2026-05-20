@@ -1,5 +1,7 @@
 use crash_reporter::collector::{collect_snapshot, init_system, refresh_system};
-use crash_reporter::logger::{open_log_file, write_snapshot, LogOutput};
+use crash_reporter::logger::{
+    file_output_format, open_log_file, write_snapshot, FileOutputFormat, LogOutput,
+};
 use tempfile::NamedTempFile;
 
 // ── Collector tests ───────────────────────────────────────────────────────────
@@ -93,7 +95,10 @@ fn write_snapshot_to_file_produces_valid_ndjson() {
 
     let tmp = NamedTempFile::new().expect("temp file");
     let writer = open_log_file(tmp.path()).expect("open log file");
-    let mut output = LogOutput::File(writer);
+    let mut output = LogOutput::File {
+        writer,
+        format: FileOutputFormat::Json,
+    };
 
     write_snapshot(&mut output, &snap).expect("write snapshot");
 
@@ -117,7 +122,10 @@ fn write_multiple_snapshots_appends_lines() {
     for _ in 0..3 {
         let snap = collect_snapshot(&sys);
         let writer = open_log_file(tmp.path()).expect("open log file");
-        let mut output = LogOutput::File(writer);
+        let mut output = LogOutput::File {
+            writer,
+            format: FileOutputFormat::Json,
+        };
         write_snapshot(&mut output, &snap).expect("write snapshot");
     }
 
@@ -132,7 +140,56 @@ fn snapshot_json_contains_expected_keys() {
     let snap = collect_snapshot(&sys);
 
     let json = serde_json::to_value(&snap).expect("serialise snapshot");
-    for key in &["timestamp", "cpu", "memory", "processes", "thermals", "disks", "networks"] {
+    for key in &[
+        "timestamp",
+        "cpu",
+        "memory",
+        "processes",
+        "thermals",
+        "disks",
+        "networks",
+        "usb_devices",
+        "monitors",
+    ] {
         assert!(json.get(key).is_some(), "JSON snapshot must contain key '{key}'");
     }
+}
+
+#[test]
+fn plain_text_output_contains_human_readable_sections() {
+    let mut sys = init_system();
+    refresh_system(&mut sys);
+    let snap = collect_snapshot(&sys);
+
+    let tmp = NamedTempFile::new().expect("temp file");
+    let writer = open_log_file(tmp.path()).expect("open log file");
+    let mut output = LogOutput::File {
+        writer,
+        format: FileOutputFormat::PlainText,
+    };
+
+    write_snapshot(&mut output, &snap).expect("write snapshot");
+    let content = std::fs::read_to_string(tmp.path()).expect("read log file");
+
+    assert!(content.contains("Timestamp"), "plain text should include timestamp");
+    assert!(
+        content.contains("TOP PROCESSES"),
+        "plain text should include process section"
+    );
+}
+
+#[test]
+fn file_output_format_uses_extension_for_plain_text() {
+    assert_eq!(
+        file_output_format(std::path::Path::new("report.txt")),
+        FileOutputFormat::PlainText
+    );
+    assert_eq!(
+        file_output_format(std::path::Path::new("report.log")),
+        FileOutputFormat::PlainText
+    );
+    assert_eq!(
+        file_output_format(std::path::Path::new("report.json")),
+        FileOutputFormat::Json
+    );
 }

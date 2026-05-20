@@ -1,5 +1,7 @@
 use crash_reporter::collector::{collect_snapshot, init_system, refresh_system};
-use crash_reporter::logger::{open_log_file, print_pretty, write_snapshot, LogOutput};
+use crash_reporter::logger::{
+    file_output_format, open_log_file, print_pretty, write_snapshot, LogOutput,
+};
 
 use std::path::PathBuf;
 use std::thread;
@@ -17,8 +19,9 @@ use clap::Parser;
 ///   • Disk usage
 ///   • Network interface counters
 ///
-/// Output is written as newline-delimited JSON (NDJSON).  Pass --pretty to
-/// also print a human-readable summary to the terminal.
+/// Output is written as newline-delimited JSON (NDJSON), except files ending in
+/// `.log` or `.txt`, which receive plain-text summaries.
+/// Pass --pretty to also print a human-readable summary to the terminal.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -52,10 +55,11 @@ fn main() {
     let mut log_output = match &args.output {
         Some(path) => match open_log_file(path) {
             Ok(writer) => {
+                let format = file_output_format(path);
                 if args.pretty {
-                    LogOutput::Both(writer)
+                    LogOutput::Both { writer, format }
                 } else {
-                    LogOutput::File(writer)
+                    LogOutput::File { writer, format }
                 }
             }
             Err(e) => {
