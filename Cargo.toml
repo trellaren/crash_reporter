@@ -1,0 +1,16 @@
+[package]
+name = "crash_reporter"
+version = "0.1.0"
+edition = "2024"
+description = "A lightweight CLI app for logging system information, thermal data, and crash reports"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+sysinfo = "0.33"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3"
