@@ -193,3 +193,19 @@ fn file_output_format_uses_extension_for_plain_text() {
         FileOutputFormat::Json
     );
 }
+
+#[test]
+fn snapshot_usb_and_monitor_entries_are_well_formed() {
+    let mut sys = init_system();
+    refresh_system(&mut sys);
+    let snap = collect_snapshot(&sys);
+
+    for usb in &snap.usb_devices {
+        assert!(!usb.is_empty(), "usb entry should not be empty");
+        assert!(usb.contains(':'), "usb entry should contain vendor:product");
+    }
+
+    for monitor in &snap.monitors {
+        assert!(!monitor.is_empty(), "monitor entry should not be empty");
+    }
+}
